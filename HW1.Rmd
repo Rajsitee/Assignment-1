@@ -1,0 +1,387 @@
+---
+title: "ECO395 HW 1: Rajsitee Dhavale"
+output: md_document
+author: "Rajsitee Dhavale"
+
+---
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(rsample)   # for creating train/test splits
+library(caret)
+library(modelr)
+library(parallel)
+library(foreach)
+library(rmarkdown)
+```
+
+# Question 1: Flights 
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+ABIA = read.csv('https://raw.githubusercontent.com/jgscott/ECO395M/master/data/ABIA.csv')
+AC = ABIA %>%     # where AC: airline cancel
+  group_by(UniqueCarrier,Cancelled) %>% 
+  summarise(n = n())
+names(AC) <- c('UniqueCarrier', 'Cancelled', 'count')
+# Plot
+ggplot(AC) +
+  geom_col(aes(x=factor(UniqueCarrier), y=count)) 
+
+# Max. Cancelled Flights: SouthWest Airlines 
+
+```
+### [Ans. SouthWest {WN} Airlines ]
+
+
+## Destination with the maximum number of  cancellations 
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+DC = ABIA%>%
+  group_by(Dest)%>%
+  summarize(count = n())
+
+ggplot(DC)+
+  geom_col(aes(x=factor(Dest), y=count))
+```
+### Destinations with the most cancelled flights: Austin (maximum), Dallas, Houston, Phoenix
+
+## Frequency of Flights 
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+WN_FF = ABIA%>%
+  group_by(Dest)%>%
+  filter(UniqueCarrier == "WN")%>%
+  summarize(count = n())
+  
+
+ggplot(WN_FF)+
+  geom_col(aes(x=Dest, y=count)) +
+  coord_flip()
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+D = ABIA %>%
+  group_by(UniqueCarrier)%>%
+  summarize(count = n())
+
+ggplot(D)+
+  geom_col(aes(x=factor(UniqueCarrier), y=count))
+
+```
+
+
+# Question 2: Billboard Top 100
+
+## Part A
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+
+billboard = read.csv('/Users/rajsitee/Downloads/billboard.csv')
+
+# Part A 
+bb = billboard %>%
+  group_by(performer, song) %>%
+  summarize(count = n()) %>%
+  arrange(desc(count))
+
+head(bb, n=10)
+
+```
+###Caption:
+# This table ranks the 10 most popular songs from 1958 to 2021
+# (as measured by the number of weeks that each song spent on the Billboard Top 100 chart). 
+
+## Part B
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part B
+
+diversity = billboard %>%
+  filter(between(year, 1959, 2020)) %>%
+  group_by(year) %>%
+  count(song_id)%>%
+  count(year)
+
+ggplot(data = diversity) +
+  geom_line(mapping = aes(x=year, y=n))
+
+```
+### Caption: Number of songs appearing in the Top 100 per year 
+### Interesting trend: Overall rise in no. of hits in the sixties followed by a sharp andsteady decline till the early 2000s.
+### Sharp rise in the number of hits post 2015.
+
+## Part C
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part C
+# Write 10-week-hit as TWH
+
+TWH = billboard %>%
+  filter(weeks_on_chart>=10) %>%
+  select(performer, year) %>%
+  group_by(year) %>%
+  count()
+
+bboard = billboard %>%
+  group_by(song_id, performer) %>%
+  summarize(noofweeks = n()) %>%
+  filter(noofweeks >= 10) %>%
+  group_by(performer) %>%
+  count() %>%
+  filter(n >= 30)
+
+ggplot(data = bboard, aes(y=performer, x=n, fill=as.factor(performer))) + geom_col()
+```
+
+
+# Question 3: Olympics 
+
+## Part A 
+### I've labelled the filtered set of female competitors as FC.
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+
+# Question 3: Data Wrangling - Olympics Final Code #
+
+olympics_top20 = read.csv('/Users/rajsitee/Downloads/olympics_top20.csv')
+
+# Part A: 95th percentile of heights for all female competitors across all athletic events. 
+
+FC <- filter(olympics_top20, sex=="F")    
+#View(FC)
+
+quantile(FC$height, probs = c(0.95))
+```
+### Ans: 186
+
+## Part B
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part B: Which single women's event had the greatest variability in competitor's heights 
+# across the entire history of the Olympics, as measured by the standard deviation. 
+FC %>%
+  group_by(event) %>%
+  summarise(sd_height = sd(height)) %>%
+  arrange(desc(sd_height))
+
+```
+### Ans: Rowing Women's Coxed Fours (S.D. : 10.9 {10.86 rounded off to 10.9})
+
+## Part C
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part C: How has the average age of olympic swimmers changed over time? 
+# Does the trend look different for male swimmers relative to female swimmers?
+olympics = olympics_top20 %>% 
+  filter(sport == 'Swimming') %>% 
+  group_by(year, sex) %>% 
+  summarise(mean_age = mean(age))
+
+male = olympics %>% filter(sex == 'M')
+fem = olympics %>% filter(sex == 'F')
+
+ggplot(olympics) +
+  geom_line(aes(x=year, y=mean_age)) +
+  facet_wrap(~sex) +
+  labs(x = "Year", y = "Age")
+  
+```
+### The average age of swimmers has changed over time (sharp rise followed by fall, then followed by a gradual increase in age). 
+### For Females: Overall, the average age dipped around 1975 and has since greatly increased. 
+### For Males: Overall, the average age had fallen. It was at an all-time high around 1921 
+### and then fell sharply before gradually rising (slightly). 
+
+
+# Question 4: S-Class 
+
+## For the 350 model trim (labelled TFM)
+
+```{r}
+#Question 4: S-Class Final Code #
+
+sclass = read.csv('/Users/rajsitee/Downloads/sclass.csv')
+
+## FOR THE 350 MODEL TRIM ##
+
+# Filter 350 model 
+# Label 350 model as TFM
+TFM <- filter(sclass, trim=="350")
+#view(TFM)
+
+summary(TFM)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# plot the data
+# ggplot(data = TFM) + 
+ # geom_point(mapping = aes(x = mileage, y = price), color='darkblue')
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part 1
+# test train split
+TFM_split = initial_split(TFM, prop=0.7)
+TFM_train = training(TFM_split)
+TFM_test  = testing(TFM_split)
+
+# Part 2
+k_gs = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300)
+
+k_gs = seq(2,200, by=1)
+
+gscv = foreach(k = k_gs, .combine='rbind') %dopar% {
+  knn = knnreg(price ~ mileage, data=TFM_train, k=k)
+  rms = rmse(knn, TFM_test)
+  c(k=k, err=rms)   # err is the same as out-of-sample rmse
+} %>% as.data.frame
+
+# head(gscv)
+#View(gscv)
+```
+
+### RMSE Plot for the 63 AMG Trim
+### Optimal K: 11
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+ggplot(gscv) + 
+  geom_point(aes(x=k, y=err)) + 
+  scale_x_log10()
+
+gscv_final = gscv %>% filter(err == min(gscv$err))
+gscv_final$k
+#Ans: 11 (optimal k)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+knn = knnreg(price ~ mileage, data=TFM_train, k=gscv_final$k)
+
+TFM_test = TFM_test %>%
+  mutate(price_pred = predict(knn, TFM_test))
+# head(TFM_test)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+#p_test = ggplot(data = TFM_test) + 
+#  geom_point(mapping = aes(x = mileage, y = price), alpha=0.2)
+# p_test
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+p_test = ggplot(data = TFM_test) + 
+  geom_point(mapping = aes(x=mileage, y=price_pred), alpha=0.2)
+p_test
+```
+# Fitted plot for the 350 model trim
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+
+p_test + geom_line(aes(x = mileage, y=price_pred), color='red', size=1.5)
+```
+## For the 63 AMG Trim 
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+
+sclass = read.csv('/Users/rajsitee/Downloads/sclass.csv')
+
+## FOR THE 63 AMG TRIM ##
+
+# Filter 63 AMG model 
+# Label the 63 AMG as AMG
+AMG <- filter(sclass, trim=="63 AMG")
+#view(AMG)
+
+summary(AMG)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# head(AMG)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# plot the data
+# ggplot(data = AMG) + 
+#  geom_point(mapping = aes(x = mileage, y = price), color='darkgreen')
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+# Part 1
+# test train split
+AMG_split = initial_split(AMG, prop=0.7)
+AMG_train = training(AMG_split)
+AMG_test  = testing(AMG_split)
+
+# Part 2
+k_grid = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300)
+
+k_grid = seq(2,200, by=1)
+
+cvgs = foreach(k = k_gs, .combine='rbind') %dopar% {
+  knn = knnreg(price ~ mileage, data=AMG_train, k=k)
+  rms = rmse(knn, AMG_test)
+  c(k=k, err=rms)   # err is the same as out-of-sample rmse
+} %>% as.data.frame
+
+# head(cvgs)
+#view(cvgs)
+```
+
+### RMSE plot for the 63AMG trim
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+ggplot(cvgs) + 
+  geom_point(aes(x=k, y=err)) + 
+  scale_x_log10()
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+cvgs_final = cvgs %>% filter(err == min(cvgs$err))
+cvgs_final$k
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+knn = knnreg(price ~ mileage, data=AMG_train, k=cvgs_final$k)
+
+AMG_test = AMG_test %>%
+  mutate(price_pred = predict(knn, AMG_test))
+# head(AMG_test)
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+
+#p_test = ggplot(data = AMG_test) + 
+#  geom_point(mapping = aes(x = mileage, y = price), alpha=0.2)
+#p_test
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+p_test = ggplot(data = AMG_test) + 
+  geom_point(mapping = aes(x=mileage, y=price_pred), alpha=0.2)
+p_test
+```
+
+```{r, echo=FALSE, warning=FALSE, error=FALSE}
+
+p_test + geom_line(aes(x = mileage, y=price_pred), color='red', size=1.5)
+
+```
+### Usually, higher values of k reduce variation in the model but lead to greater bias (bias-variance tradeoff). Here we see that with repeated trails, the k value for the 63 model is higher because that trim has a larger sample size. When the sample size is large, you can use a larger k as the values will have a lower effect on the bias in the model. 
